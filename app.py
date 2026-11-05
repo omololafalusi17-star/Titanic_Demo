@@ -1,20 +1,19 @@
 import joblib
 import pandas as pd
 import streamlit as st
+from pathlib import Path
 
 st.set_page_config(page_title="Titanic Survival Predictor", page_icon="🚢")
 
-
-# Load the trained model once and cache it across reruns/sessions
+# Load the trained model safely using path resolution
 @st.cache_resource
 def load_model():
-    return joblib.load("models/forest_model.joblib")
-
+    model_path = Path(__file__).parent / "models" / "forest_model.joblib"
+    return joblib.load(model_path)
 
 random_forest = load_model()
 
-
-# THE FUNCTION
+# Prediction logic
 def predict_survival(name, Pclass, Sex, Age, SibSp, PaCh, Fare):
     input_data = pd.DataFrame({
         "Pclass": [Pclass],
@@ -34,72 +33,72 @@ def predict_survival(name, Pclass, Sex, Age, SibSp, PaCh, Fare):
     else:
         result = f"Cheers 🥂 {name}, you Survived 😁"
 
-    # probs = {"Died": float(probabilities[0]), "Survived": float(probabilities[1])}
     return prediction, result, probabilities
 
-
-DEFAULTS = {
-    "name": "",
-    "pclass": 3,
-    "sex": 0,
-    "age": 30,
-    "sibsp": 0,
-    "pach": 0,
-    "fare": 30.0,
-}
-
-# Initialise widget state once
-for key, value in DEFAULTS.items():
-    st.session_state.setdefault(key, value)
-
-
-def load_example(example):
-    name, pclass, sex, age, sibsp, pach, fare = example
-    st.session_state.update(
-        name=name, pclass=pclass, sex=sex, age=age,
-        sibsp=sibsp, pach=pach, fare=float(fare),
-    )
-
-
-# THE UI
+# UI Elements
 st.title("Titanic Survival Predictor")
 st.write("Enter a passenger's details and see if our random forest thinks they'd survive.")
 
+# Presets/Examples Section (Safely triggers re-runs to populate fields)
+st.subheader("Quick Presets")
+col_ex1, col_ex2 = st.columns(2)
+
+if col_ex1.button("👩‍💼 Sample: 1st Class Female"):
+    st.session_state["name"] = "Rose DeWitt Bukater"
+    st.session_state["pclass"] = 1
+    st.session_state["sex"] = 1
+    st.session_state["age"] = 17
+    st.session_state["sibsp"] = 0
+    st.session_state["pach"] = 1
+    st.session_state["fare"] = 150.0
+    st.rerun()
+
+if col_ex2.button("🧑‍🎨 Sample: 3rd Class Male"):
+    st.session_state["name"] = "Jack Dawson"
+    st.session_state["pclass"] = 3
+    st.session_state["sex"] = 0
+    st.session_state["age"] = 20
+    st.session_state["sibsp"] = 0
+    st.session_state["pach"] = 0
+    st.session_state["fare"] = 7.5
+    st.rerun()
+
+# Form configuration with fallbacks for preset injection
 with st.form("passenger_form"):
-    st.text_input("Name", placeholder="e.g. Benjamin Ogbonna", key="name")
-    st.radio(
+    name = st.text_input("Name", placeholder="e.g. Benjamin Ogbonna", key="name")
+    
+    pclass = st.radio(
         "Passenger Class (1 = First)", [1, 2, 3],
-        horizontal=True, key="pclass",
+        index=[1, 2, 3].index(st.session_state.get("pclass", 3)),
+        horizontal=True
     )
-    st.radio(
+    
+    sex = st.radio(
         "Sex", [0, 1],
+        index=[0, 1].index(st.session_state.get("sex", 0)),
         format_func=lambda x: "Male" if x == 0 else "Female",
-        horizontal=True, key="sex",
+        horizontal=True
     )
-    st.slider("Age", 0, 80, step=1, key="age")
+    
+    age = st.slider("Age", 0, 80, int(st.session_state.get("age", 30)), step=1)
 
     c1, c2, c3 = st.columns(3)
-    c1.number_input("Siblings/Spouses aboard", min_value=0, step=1, key="sibsp")
-    c2.number_input("Parents/Children aboard", min_value=0, step=1, key="pach")
-    c3.number_input("Fare paid (£)", min_value=0.0, step=1.0, key="fare")
+    sibsp = c1.number_input("Siblings/Spouses aboard", min_value=0, step=1, value=int(st.session_state.get("sibsp", 0)))
+    pach = c2.number_input("Parents/Children aboard", min_value=0, step=1, value=int(st.session_state.get("pach", 0)))
+    fare = c3.number_input("Fare paid (£)", min_value=0.0, step=1.0, value=float(st.session_state.get("fare", 30.0)))
 
     submitted = st.form_submit_button("Predict", type="primary")
 
+# Evaluation Output
 if submitted:
-    s = st.session_state
     prediction, result, probabilities = predict_survival(
-        s.name, s.pclass, s.sex, s.age, s.sibsp, s.pach, s.fare
+        name, pclass, sex, age, sibsp, pach, fare
     )
 
-    st.subheader("Prediction")
+    st.subheader("Prediction Result")
     if prediction == 0:
         st.error(result)
+        st.metric(label="Death Probability", value=f"{probabilities[0]:.1%}")
     else:
         st.success(result)
-
-    st.subheader("Probability")
-    if prediction == 0:
-        st.write(f"{probabilities[0]:.1%}")
-    else:
-        st.write(f"{probabilities[1]:.1%}")
-  
+        st.metric(label="Survival Probability", value=f"{probabilities[1]:.1%}")
